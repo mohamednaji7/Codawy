@@ -1,0 +1,67 @@
+{
+  "name": "codawy",
+  "displayName": "Codawy - Beyond LLM chats",
+  "description": "Beyond LLM chats",
+  "version": "0.0.1",
+  "engines": {
+    "vscode": "^1.98.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "codawy.helloWorld",
+        "title": "Hello World"
+      }
+    ],
+    "chatParticipants": [
+      {
+        "id": "codawy.codawy-coder",
+        "fullName": "Codawy",
+        "name": "codawy",
+        "description": "Type...",
+        "isSticky": true
+      },
+      {
+        "id": "codawy.codawy-tutor",
+        "fullName": "Codawy Tutor",
+        "name": "codawy-tutor",
+        "description": "What can I teach you?",
+        "isSticky": true
+      },
+      {
+        "id": "codawy.codawy-echo",
+        "fullName": "Codawy echo",
+        "name": "codawy-echo",
+        "description": "echo my message please!",
+        "isSticky": true
+      }
+    ]
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "pretest": "npm run compile && npm run lint",
+    "lint": "eslint src",
+    "test": "vscode-test"
+  },
+  "devDependencies": {
+    "@types/mocha": "^10.0.10",
+    "@types/node": "20.x",
+    "@types/vscode": "^1.98.0",
+    "@typescript-eslint/eslint-plugin": "^8.25.0",
+    "@typescript-eslint/parser": "^8.25.0",
+    "@vscode/test-cli": "^0.0.10",
+    "@vscode/test-electron": "^2.4.1",
+    "eslint": "^9.21.0",
+    "typescript": "^5.7.3"
+  },
+  "dependencies": {
+    "ollama": "^0.5.14"
+  }
+}
