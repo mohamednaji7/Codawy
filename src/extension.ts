@@ -1,123 +1,203 @@
-// The module 'vscode' contains the VS Code extensibility API
-// Import the module and reference it with the alias vscode in your code below
-import ollama  from 'ollama';
+// src/extension.ts
 import * as vscode from 'vscode';
+import ollama from 'ollama';
 
-const INST_PROMPT =
+const INST_PROMPT = 
   'You are a helpful code tutor. Your job is to teach the user with simple descriptions and sample code of the concept. Respond with a guided overview of the concept in a series of messages. Do not give the user the answer directly, but guide them to find the answer themselves. If the user asks a non-programming question, politely decline to respond.';
 
-
-  
-// This method is called when your extension is activated
-// Your extension is activated the very first time the command is executed
 export function activate(context: vscode.ExtensionContext) {
+  console.log('Congratulations, your extension "codawy" is now active!');
 
-	// Use the console to output diagnostic information (console.log) and errors (console.error)
-	// This line of code will only be executed once when your extension is activated
-	console.log('Congratulations, your extension "codawy" is now active!');
+  // Register sidebar view
+  const provider = new ChatViewProvider(context.extensionUri);
+  context.subscriptions.push(
+    vscode.window.registerWebviewViewProvider('customChatView', provider)
+  );
 
-	// The command has been defined in the package.json file
-	// Now provide the implementation of the command with registerCommand
-	// The commandId parameter must match the command field in package.json
-	const disposable = vscode.commands.registerCommand('codawy.helloWorld', () => {
-		// The code you place here will be executed every time your command is executed
-		// Display a message box to the user
-		vscode.window.showInformationMessage('Hello World from Codawy - Beyond LLM chats!');
-	});
+  // Register commands
+  context.subscriptions.push(
+    vscode.commands.registerCommand('codawy.openCustomChat', () => {
+      vscode.commands.executeCommand('workbench.view.extension.custom-chat-sidebar');
+    })
+  );
 
-	context.subscriptions.push(disposable);
+  context.subscriptions.push(
+    vscode.commands.registerCommand('codawy.helloWorld', () => {
+      vscode.window.showInformationMessage('Hello World from Codawy - Beyond LLM chats!');
+    })
+  );
+
+  // Chat Participants
+  const tutor = vscode.chat.createChatParticipant('codawy.codawy-tutor', tutorHandler);
+  const coder = vscode.chat.createChatParticipant('codawy.codawy-coder', coderHandler);
+  const echoer = vscode.chat.createChatParticipant('codawy.codawy-echo', echoHandler);
 }
 
-// This method is called when your extension is deactivated
 export function deactivate() {}
 
-// define a chat handler
+// Sidebar Chat View
+class ChatViewProvider implements vscode.WebviewViewProvider {
+  constructor(private readonly _extensionUri: vscode.Uri) {}
+
+  public resolveWebviewView(
+    webviewView: vscode.WebviewView,
+    context: vscode.WebviewViewResolveContext,
+    _token: vscode.CancellationToken
+  ) {
+    webviewView.webview.options = {
+      enableScripts: true,
+      localResourceRoots: [this._extensionUri]
+    };
+    
+    webviewView.webview.html = this._getHtmlForWebview(webviewView.webview);
+    
+    webviewView.webview.onDidReceiveMessage(async (message) => {
+      if (message.command === 'sendMessage') {
+        const response = await this._callChatAPI(message.text);
+        webviewView.webview.postMessage({ command: 'receiveMessage', text: response });
+      }
+    });
+  }
+
+  private _getHtmlForWebview(webview: vscode.Webview): string {
+    return `
+      <!DOCTYPE html>
+      <html lang="en">
+      <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Custom Chat</title>
+        <style>
+          body { padding: 10px; font-family: var(--vscode-font-family); }
+          #chat-container { display: flex; flex-direction: column; height: 100vh; }
+          #messages { flex: 1; overflow-y: auto; margin-bottom: 10px; }
+          #input-container { display: flex; }
+          #message-input { flex: 1; background-color: var(--vscode-input-background); color: var(--vscode-input-foreground); border: 1px solid var(--vscode-input-border); padding: 5px; }
+          #send-button { background-color: var(--vscode-button-background); color: var(--vscode-button-foreground); border: none; padding: 5px 10px; margin-left: 5px; cursor: pointer; }
+          .message { margin-bottom: 8px; padding: 5px; border-radius: 5px; }
+          .user { background-color: var(--vscode-editor-background); }
+          .assistant { background-color: var(--vscode-editor-inactiveSelectionBackground); }
+        </style>
+      </head>
+      <body>
+        <div id="chat-container">
+          <div id="messages"></div>
+          <div id="input-container">
+            <input id="message-input" type="text" placeholder="Type your message...">
+            <button id="send-button">Send</button>
+          </div>
+        </div>
+        <script>
+          const vscode = acquireVsCodeApi();
+          const messageInput = document.getElementById('message-input');
+          const sendButton = document.getElementById('send-button');
+          const messagesContainer = document.getElementById('messages');
+          
+          sendButton.addEventListener('click', () => {
+            const text = messageInput.value;
+            if (text) {
+              addMessage('user', text);
+              vscode.postMessage({ command: 'sendMessage', text });
+              messageInput.value = '';
+            }
+          });
+          
+          messageInput.addEventListener('keyup', (e) => {
+            if (e.key === 'Enter') sendButton.click();
+          });
+          
+          window.addEventListener('message', event => {
+            const message = event.data;
+            if (message.command === 'receiveMessage') {
+              addMessage('assistant', message.text);
+            }
+          });
+          
+          function addMessage(sender, text) {
+            const messageElement = document.createElement('div');
+            messageElement.className = 'message ' + sender;
+            messageElement.textContent = (sender === 'user' ? 'You: ' : 'Assistant: ') + text;
+            messagesContainer.appendChild(messageElement);
+            messagesContainer.scrollTop = messagesContainer.scrollHeight;
+          }
+        </script>
+      </body>
+      </html>
+    `;
+  }
+
+  private async _callChatAPI(text: string): Promise<string> {
+    try {
+      const response = await ollama.chat({
+        model: 'qwen2.5-coder:1.5b',
+        messages: [{ role: 'user', content: text }],
+      });
+      return response.message.content;
+    } catch (error) {
+      return `Error: ${error instanceof Error ? error.message : String(error)}`;
+    }
+  }
+}
+
+// Chat Handlers
 const tutorHandler: vscode.ChatRequestHandler = async (
-	request: vscode.ChatRequest,
-	context: vscode.ChatContext,
-	stream: vscode.ChatResponseStream,
-	token: vscode.CancellationToken
-  ) => {
-	// initialize the prompt
-	let prompt = INST_PROMPT;
+  request: vscode.ChatRequest,
+  context: vscode.ChatContext,
+  stream: vscode.ChatResponseStream,
+  token: vscode.CancellationToken
+) => {
+  const messages = [new vscode.LanguageModelChatMessage('user', INST_PROMPT)];
+  messages.push(new vscode.LanguageModelChatMessage('user', request.prompt));
   
-	// initialize the messages array with the prompt
-	const messages = [vscode.LanguageModelChatMessage.User(prompt)];
-  
-	// add in the user's message
-	messages.push(vscode.LanguageModelChatMessage.User(request.prompt));
-  
-	// send the request
-	const chatResponse = await request.model.sendRequest(messages, {}, token);
-  
-	// stream the response
-	for await (const fragment of chatResponse.text) {
-	  stream.markdown(fragment);
-	}
-  
-	return;
-  };
-  
-  // create participant
-  const tutor = vscode.chat.createChatParticipant('codawy.codawy-tutor', tutorHandler);
-  
-  // add icon to participant
-//   tutor.iconPath = vscode.Uri.joinPath(context.extensionUri, 'tutor.jpeg');
-  
-  
-  // define a chat handler
-const handler: vscode.ChatRequestHandler = async (
-	request: vscode.ChatRequest,
-	context: vscode.ChatContext,
-	stream: vscode.ChatResponseStream,
-	token: vscode.CancellationToken
-  ) => {
-  
-	try{
-		// send the request
-		const chatResponse = await ollama.chat({
-			model: 'qwen2.5-coder:1.5b',
-			messages: [{role: 'user', content: request.prompt}],
-			stream: true
-		});
-	  
-		// stream the response
-		for await (const fragment of chatResponse) {
-		  stream.markdown(fragment.message.content);
-		}
+  const chatResponse = await request.model.sendRequest(messages, {}, token);
+  for await (const fragment of chatResponse.text) {
+    stream.markdown(fragment);
+  }
+};
 
-	}catch(err){
-		const errorMessage = err instanceof Error ? err.message : String(err);
+const coderHandler: vscode.ChatRequestHandler = async (
+  request: vscode.ChatRequest,
+  context: vscode.ChatContext,
+  stream: vscode.ChatResponseStream,
+  token: vscode.CancellationToken
+) => {
+  try {
+    const chatResponse = await ollama.chat({
+      model: 'qwen2.5-coder:1.5b',
+      messages: [{ role: 'user', content: request.prompt }],
+      stream: true
+    });
+    
+    for await (const fragment of chatResponse) {
+      stream.markdown(fragment.message.content);
+    }
+  } catch (err) {
+    const errorMessage = err instanceof Error ? err.message : String(err);
+    stream.markdown(errorMessage);
+    vscode.window.showErrorMessage(errorMessage);
+  }
+};
 
-		stream.markdown(errorMessage);
-		vscode.window.showErrorMessage(errorMessage); // Use error message instead of information
-	}
+const echoHandler: vscode.ChatRequestHandler = async (
+  request: vscode.ChatRequest,
+  context: vscode.ChatContext,
+  stream: vscode.ChatResponseStream,
+  token: vscode.CancellationToken
+) => {
+  stream.markdown(request.prompt);
   
-	return;
-  };
+  const messages = context.history.map(item => {
+    if (item instanceof vscode.ChatRequestTurn) {
+      return `User: ${item.prompt}\n`;
+    } else {
+      let fullMessage = '';
+      item.response.forEach(r => {
+        const mdPart = r as vscode.ChatResponseMarkdownPart;
+        fullMessage += mdPart.value.value;
+      });
+      return `Assistant: ${fullMessage}\n`;
+    }
+  });
   
-  // create participant
-  const coder = vscode.chat.createChatParticipant('codawy.codawy-coder', handler);
-  
-  // add icon to participant
-//   tutor.iconPath = vscode.Uri.joinPath(context.extensionUri, 'tutor.jpeg');
-  
-
-  // define a chat handler
-  const echoHandler: vscode.ChatRequestHandler = async (
-	request: vscode.ChatRequest,
-	context: vscode.ChatContext,
-	stream: vscode.ChatResponseStream,
-	token: vscode.CancellationToken
-  ) => {
-	stream.markdown(request.prompt);
-	
-	return;
-  };
-  
-  // create participant
-  const echoer = vscode.chat.createChatParticipant('codawy.codawy-echo', echoHandler);
-  
-  // add icon to participant
-//   tutor.iconPath = vscode.Uri.joinPath(context.extensionUri, 'tutor.jpeg');
-  
+  stream.markdown(messages.join('\n'));
+};

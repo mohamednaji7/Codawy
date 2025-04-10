@@ -9,10 +9,39 @@
   "categories": [
     "Other"
   ],
-  "activationEvents": [],
+  "activationEvents": [
+    "onCommand:codawy.helloWorld",
+    "onCommand:codawy.openCustomChat",
+    "onView:customChatView",
+    "onChatParticipant:codawy.codawy-coder",
+    "onChatParticipant:codawy.codawy-tutor",
+    "onChatParticipant:codawy.codawy-echo"
+  ],
   "main": "./out/extension.js",
   "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "custom-chat-sidebar",
+          "title": "Custom Chat",
+          "icon": "resources/chat-icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "custom-chat-sidebar": [
+        {
+          "id": "customChatView",
+          "name": "Chat",
+          "type": "webview"
+        }
+      ]
+    },
     "commands": [
+      {
+        "command": "codawy.openCustomChat",
+        "title": "Open Custom Chat"
+      },
       {
         "command": "codawy.helloWorld",
         "title": "Hello World"
@@ -35,9 +64,9 @@
       },
       {
         "id": "codawy.codawy-echo",
-        "fullName": "Codawy echo",
+        "fullName": "Codawy Echo",
         "name": "codawy-echo",
-        "description": "echo my message please!",
+        "description": "Echo my message please!",
         "isSticky": true
       }
     ]
